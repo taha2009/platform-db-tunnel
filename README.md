@@ -38,16 +38,14 @@ The result is a single self-contained exe, with no runtime to install on the tar
 
 ## CI and releases
 
-`.github/workflows/build.yml` vets and builds the Windows exe on every push to `main` and on pull requests. The exe and its SHA-256 checksum are kept as a build artifact on each run (Actions tab, retained for 90 days by default).
-
-To publish a downloadable release, push a version tag:
+`.github/workflows/build.yml` runs only when a version tag (`v*`) is pushed; ordinary pushes and pull requests do not trigger a build. To publish a release:
 
 ```powershell
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The workflow then creates a GitHub Release with `platform-db-tunnel.exe` and `platform-db-tunnel.exe.sha256` attached. Verify a download with `certutil -hashfile platform-db-tunnel.exe SHA256` and compare it with the `.sha256` file.
+The workflow vets and builds the Windows exe, then creates a GitHub Release with `platform-db-tunnel.exe` and `platform-db-tunnel.exe.sha256` attached. Verify a download with `certutil -hashfile platform-db-tunnel.exe SHA256` and compare it with the `.sha256` file.
 
 ## Configure
 
