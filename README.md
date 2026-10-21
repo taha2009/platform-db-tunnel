@@ -24,7 +24,11 @@ Arguments bind positionally, using the placeholder style of the chosen database:
 | PostgreSQL | `$1`, `$2`, ...   |
 | MySQL      | `?`               |
 
-Limits: 30 s per query and a 1 MB request body. There is no row cap, and the whole result is held in memory before it is sent, so select only what you need. SQL errors come back as `{"error": "..."}` with status 400.
+Rows are streamed as they are read, so memory stays flat however large the result is, and there is no row cap. A query errors out if it runs longer than the timeout (30 minutes by default, `queryTimeoutSeconds` in `config.json`). The request body is limited to 1 MB.
+
+Errors:
+- A bad query, or a failure before any row is produced, returns status 400 or 500 with `{"error": "..."}`.
+- A failure **after** rows have started streaming can't change the status, which is already 200. The JSON is closed properly and carries an `error` key, e.g. `{"columns": [...], "rows": [[1, "a"]], "error": "connection lost"}`. Clients must check for `error` even on a 200.
 
 ## Build
 
@@ -57,7 +61,8 @@ Create `config.json` in the same folder as `platform-db-tunnel.exe`. It is the o
 {
   "type": "postgres",
   "dsn": "postgres://USER:PASSWORD@localhost:5432/DBNAME",
-  "port": "8080"
+  "port": "8080",
+  "queryTimeoutSeconds": 1800
 }
 ```
 
@@ -66,6 +71,7 @@ Create `config.json` in the same folder as `platform-db-tunnel.exe`. It is the o
 | `type` | `mssql`, `postgres` or `mysql`                       | `mssql` |
 | `dsn`  | Connection string for the database (required)        |         |
 | `port` | Port to listen on (always bound to `127.0.0.1`)      | `8080`  |
+| `queryTimeoutSeconds` | Max duration of one query, including reading all its rows | `1800` (30 min) |
 
 The DSN (Data Source Name) is a single string with the host, port, credentials and database name. Its format depends on the database:
 

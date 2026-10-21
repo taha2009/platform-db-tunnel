@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,7 +12,6 @@ import (
 
 const (
 	maxBodyBytes = 1 << 20
-	queryTimeout = 30 * time.Second
 )
 
 type queryRequest struct {
@@ -19,12 +19,7 @@ type queryRequest struct {
 	Args []any  `json:"args"` // bound positionally as @p1, @p2, ...
 }
 
-type queryResponse struct {
-	Columns []string `json:"columns,omitempty"`
-	Rows    [][]any  `json:"rows,omitempty"`
-}
-
-func newHandler(db *sql.DB) http.Handler {
+func newHandler(db *sql.DB, queryTimeout time.Duration) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -35,11 +30,15 @@ func newHandler(db *sql.DB) http.Handler {
 		}
 		w.Write([]byte("ok\n"))
 	})
-	mux.HandleFunc("POST /query", queryHandler(db))
+	mux.HandleFunc("POST /query", queryHandler(db, queryTimeout))
 	return mux
 }
 
-func queryHandler(db *sql.DB) http.HandlerFunc {
+// queryHandler streams the result as {"columns":[...],"rows":[...]} so memory
+// use stays flat however many rows come back. Once streaming has begun the
+// status is already 200, so a failure mid-result ends the document with
+// {...],"error":"..."} instead; clients must check for an "error" key.
+func queryHandler(db *sql.DB, timeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req queryRequest
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
@@ -48,7 +47,7 @@ func queryHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 
 		rows, err := db.QueryContext(ctx, req.SQL, req.Args...)
@@ -63,15 +62,39 @@ func queryHandler(db *sql.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		resp := queryResponse{Columns: cols, Rows: [][]any{}}
-		for rows.Next() {
-			vals := make([]any, len(cols))
-			ptrs := make([]any, len(cols))
-			for i := range vals {
-				ptrs[i] = &vals[i]
-			}
-			if err := rows.Scan(ptrs...); err != nil {
+
+		// The response is started lazily, on the first row or at the end, so an
+		// error before any row is written can still be returned as a real 500.
+		var bw *bufio.Writer
+		start := func() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			bw = bufio.NewWriter(w)
+			colsJSON, _ := json.Marshal(cols)
+			bw.WriteString(`{"columns":`)
+			bw.Write(colsJSON)
+			bw.WriteString(`,"rows":[`)
+		}
+		fail := func(err error) {
+			if bw == nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			msg, _ := json.Marshal(err.Error())
+			bw.WriteString(`],"error":`)
+			bw.Write(msg)
+			bw.WriteString("}")
+			bw.Flush()
+		}
+
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		for rows.Next() {
+			if err := rows.Scan(ptrs...); err != nil {
+				fail(err)
 				return
 			}
 			for i, v := range vals {
@@ -79,13 +102,27 @@ func queryHandler(db *sql.DB) http.HandlerFunc {
 					vals[i] = string(b)
 				}
 			}
-			resp.Rows = append(resp.Rows, vals)
+			row, err := json.Marshal(vals)
+			if err != nil {
+				fail(err)
+				return
+			}
+			if bw == nil {
+				start()
+			} else {
+				bw.WriteByte(',')
+			}
+			bw.Write(row)
 		}
 		if err := rows.Err(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			fail(err)
 			return
 		}
-		writeJSON(w, http.StatusOK, resp)
+		if bw == nil {
+			start()
+		}
+		bw.WriteString("]}")
+		bw.Flush()
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type config struct {
@@ -14,6 +15,8 @@ type config struct {
 	Addr   string
 	Driver string // database/sql driver name
 	DSN    string
+	// QueryTimeout bounds one /query call, including reading all rows.
+	QueryTimeout time.Duration
 }
 
 // fileConfig is config.json, which must sit beside the executable (a service's
@@ -22,10 +25,12 @@ type config struct {
 //	type  mssql (default), postgres or mysql
 //	dsn   driver-specific connection string (required)
 //	port  listen port on 127.0.0.1 (default 8080)
+//	queryTimeoutSeconds  max duration of one query incl. reading rows (default 1800)
 type fileConfig struct {
-	Port string `json:"port"`
-	Type string `json:"type"`
-	DSN  string `json:"dsn"`
+	Port                string `json:"port"`
+	Type                string `json:"type"`
+	DSN                 string `json:"dsn"`
+	QueryTimeoutSeconds int    `json:"queryTimeoutSeconds"`
 }
 
 func loadConfig() (*config, error) {
@@ -51,9 +56,17 @@ func loadConfig() (*config, error) {
 	if f.Port == "" {
 		f.Port = "8080"
 	}
+	if f.QueryTimeoutSeconds <= 0 {
+		f.QueryTimeoutSeconds = 30 * 60
+	}
 	driver, err := lookupDriver(f.Type)
 	if err != nil {
 		return nil, err
 	}
-	return &config{Addr: "127.0.0.1:" + f.Port, Driver: driver, DSN: f.DSN}, nil
+	return &config{
+		Addr:         "127.0.0.1:" + f.Port,
+		Driver:       driver,
+		DSN:          f.DSN,
+		QueryTimeout: time.Duration(f.QueryTimeoutSeconds) * time.Second,
+	}, nil
 }

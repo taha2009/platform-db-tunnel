@@ -76,7 +76,7 @@ func serve(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           newHandler(db),
+		Handler:           newHandler(db, cfg.QueryTimeout),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
