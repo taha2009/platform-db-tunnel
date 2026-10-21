@@ -1,4 +1,4 @@
-module db-tunnel
+module github.com/taha2009/platform-db-tunnel
 
 go 1.26.0
 

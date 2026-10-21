@@ -1,4 +1,4 @@
-# db-tunnel
+# platform-db-tunnel
 
 A small HTTP service that runs SQL against a local database: SQL Server, PostgreSQL or MySQL. It runs as a Windows Service, starts at boot, and restarts itself on failure. The app has no authentication of its own and only listens on `127.0.0.1`, so put it behind something that authenticates callers.
 
@@ -29,14 +29,14 @@ Arguments bind positionally, using the placeholder style of the chosen database:
 Requires Go 1.26 or later (see `go.mod`). Only the machine that builds needs Go; the resulting exe runs without it.
 
 ```powershell
-go build -o db-tunnel.exe .
+go build -o platform-db-tunnel.exe .
 ```
 
 The result is a single self-contained exe, with no runtime to install on the target machine.
 
 ## Configure
 
-Create `config.json` in the same folder as `db-tunnel.exe`. It is the only source of settings; environment variables are not read.
+Create `config.json` in the same folder as `platform-db-tunnel.exe`. It is the only source of settings; environment variables are not read.
 
 ```json
 {
@@ -66,33 +66,33 @@ The app only listens on `127.0.0.1`, so only processes on the same machine can r
 
 ## Install as a Windows Service
 
-1. Copy `db-tunnel.exe` to a permanent folder, e.g. `C:\Program Files\db-tunnel\` (the service points at the exe's location, so don't move it afterwards).
+1. Copy `platform-db-tunnel.exe` to a permanent folder, e.g. `C:\Program Files\platform-db-tunnel\` (the service points at the exe's location, so don't move it afterwards).
 2. Create `config.json` next to it, as described above.
 3. From an **elevated** (Administrator) prompt:
 
 ```powershell
-cd "C:\Program Files\db-tunnel"
-.\db-tunnel.exe install
+cd "C:\Program Files\platform-db-tunnel"
+.\platform-db-tunnel.exe install
 ```
 
-This registers the `DBTunnel` service with automatic start and starts it. On failure it restarts after 5 s, 5 s, then 30 s.
+This registers the `PlatformDBTunnel` service with automatic start and starts it. On failure it restarts after 5 s, 5 s, then 30 s.
 
 Check it:
 
 ```powershell
-Get-Service DBTunnel
+Get-Service PlatformDBTunnel
 curl http://127.0.0.1:8080/healthz
 ```
 
-Errors are written to the Windows Event Log (Event Viewer → Windows Logs → Application, source `DBTunnel`).
+Errors are written to the Windows Event Log (Event Viewer → Windows Logs → Application, source `PlatformDBTunnel`).
 
 ### Other commands
 
 ```powershell
-.\db-tunnel.exe run         # run in the console (default), useful for debugging
-.\db-tunnel.exe start       # start the service
-.\db-tunnel.exe stop        # stop the service
-.\db-tunnel.exe uninstall   # stop and remove the service
+.\platform-db-tunnel.exe run         # run in the console (default), useful for debugging
+.\platform-db-tunnel.exe start       # start the service
+.\platform-db-tunnel.exe stop        # stop the service
+.\platform-db-tunnel.exe uninstall   # stop and remove the service
 ```
 
 To upgrade: `stop`, replace the exe, `start`.

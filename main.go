@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	serviceName = "DBTunnel"
-	displayName = "DB Tunnel HTTP Service"
+	serviceName = "PlatformDBTunnel"
+	displayName = "Platform DB Tunnel HTTP Service"
 	description = "HTTP application that starts automatically at boot."
 )
 
