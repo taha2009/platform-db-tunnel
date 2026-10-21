@@ -11,7 +11,6 @@ import (
 
 const (
 	maxBodyBytes = 1 << 20
-	maxRows      = 10000
 	queryTimeout = 30 * time.Second
 )
 
@@ -21,9 +20,8 @@ type queryRequest struct {
 }
 
 type queryResponse struct {
-	Columns   []string `json:"columns,omitempty"`
-	Rows      [][]any  `json:"rows,omitempty"`
-	Truncated bool     `json:"truncated,omitempty"`
+	Columns []string `json:"columns,omitempty"`
+	Rows    [][]any  `json:"rows,omitempty"`
 }
 
 func newHandler(db *sql.DB) http.Handler {
@@ -67,10 +65,6 @@ func queryHandler(db *sql.DB) http.HandlerFunc {
 		}
 		resp := queryResponse{Columns: cols, Rows: [][]any{}}
 		for rows.Next() {
-			if len(resp.Rows) >= maxRows {
-				resp.Truncated = true
-				break
-			}
 			vals := make([]any, len(cols))
 			ptrs := make([]any, len(cols))
 			for i := range vals {

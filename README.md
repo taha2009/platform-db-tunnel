@@ -14,7 +14,7 @@ curl -X POST http://127.0.0.1:8080/query \
   -d '{"sql": "select * from users where id = @p1", "args": [42]}'
 ```
 
-Response: `{"columns": ["id", "name"], "rows": [[42, "alice"]], "truncated": false}`
+Response: `{"columns": ["id", "name"], "rows": [[42, "alice"]]}`
 
 Arguments bind positionally, using the placeholder style of the chosen database:
 
@@ -22,7 +22,9 @@ Arguments bind positionally, using the placeholder style of the chosen database:
 |------------|-------------------|
 | SQL Server | `@p1`, `@p2`, ... |
 | PostgreSQL | `$1`, `$2`, ...   |
-| MySQL      | `?`               | Limits: 30 s per query, 10,000 rows (`truncated` is set if cut off), 1 MB request body. SQL errors come back as `{"error": "..."}` with status 400.
+| MySQL      | `?`               |
+
+Limits: 30 s per query and a 1 MB request body. There is no row cap, and the whole result is held in memory before it is sent, so select only what you need. SQL errors come back as `{"error": "..."}` with status 400.
 
 ## Build
 
