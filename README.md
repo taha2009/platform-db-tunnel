@@ -32,6 +32,8 @@ Requires Go 1.26 or later (see `go.mod`). Only the machine that builds needs Go;
 go build -o platform-db-tunnel.exe .
 ```
 
+There is no separate dependency install step: `go build` downloads the modules listed in `go.mod` on first run (internet access required; `go mod download` fetches them without building).
+
 The result is a single self-contained exe, with no runtime to install on the target machine.
 
 ## Configure
