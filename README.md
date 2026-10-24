@@ -98,6 +98,14 @@ cd "C:\Program Files\platform-db-tunnel"
 
 This registers the `PlatformDBTunnel` service with automatic start and starts it. On failure it restarts after 5 s, 5 s, then 30 s.
 
+By default the service runs as `LocalSystem`. For SQL Server Windows authentication (a DSN without user/password), install it as your own account instead; you will be prompted for that account's Windows password:
+
+```powershell
+.\platform-db-tunnel.exe install --current-user
+```
+
+The account is whoever is signed in, even from an elevated prompt. It must have a password: Windows refuses service logons for blank-password accounts ("The service did not start due to a logon failure"). If the password later changes, update it with `sc.exe config PlatformDBTunnel obj= "DOMAIN\you" password= "..."`.
+
 Check it:
 
 ```powershell

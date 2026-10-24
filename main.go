@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"bufio"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -43,7 +47,7 @@ func main() {
 			log.Fatal(err)
 		}
 	case "install":
-		err = installService()
+		err = installService(len(os.Args) > 2 && os.Args[2] == "--current-user")
 	case "uninstall":
 		err = uninstallService()
 	case "start":
@@ -54,7 +58,7 @@ func main() {
 			return err
 		})
 	default:
-		fmt.Fprintf(os.Stderr, "usage: %s [run|install|uninstall|start|stop]\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "usage: %s [run|install [--current-user]|uninstall|start|stop]\n", filepath.Base(os.Args[0]))
 		os.Exit(2)
 	}
 	if err != nil {
@@ -136,10 +140,46 @@ func (s *service) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 	}
 }
 
-func installService() error {
+// readPassword prompts on the console without echoing the input.
+func readPassword(prompt string) (string, error) {
+	h := windows.Handle(os.Stdin.Fd())
+	var mode uint32
+	if err := windows.GetConsoleMode(h, &mode); err != nil {
+		return "", fmt.Errorf("stdin is not a console: %w", err)
+	}
+	if err := windows.SetConsoleMode(h, mode&^windows.ENABLE_ECHO_INPUT); err != nil {
+		return "", err
+	}
+	defer windows.SetConsoleMode(h, mode)
+	fmt.Fprint(os.Stderr, prompt)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	fmt.Fprintln(os.Stderr)
+	return strings.TrimRight(line, "\r\n"), err
+}
+
+// installService registers the service. With asCurrentUser it runs as the account
+// that invoked install (needed for Windows authentication to the database);
+// otherwise it runs as LocalSystem.
+func installService(asCurrentUser bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
+	}
+	cfg := mgr.Config{
+		DisplayName: displayName,
+		Description: description,
+		StartType:   mgr.StartAutomatic,
+	}
+	if asCurrentUser {
+		u, err := user.Current()
+		if err != nil {
+			return err
+		}
+		pw, err := readPassword(fmt.Sprintf("Password for %s: ", u.Username))
+		if err != nil {
+			return err
+		}
+		cfg.ServiceStartName, cfg.Password = u.Username, pw
 	}
 	m, err := mgr.Connect()
 	if err != nil {
@@ -147,11 +187,7 @@ func installService() error {
 	}
 	defer m.Disconnect()
 
-	s, err := m.CreateService(serviceName, exe, mgr.Config{
-		DisplayName: displayName,
-		Description: description,
-		StartType:   mgr.StartAutomatic,
-	}, "run")
+	s, err := m.CreateService(serviceName, exe, cfg, "run")
 	if err != nil {
 		return err
 	}
