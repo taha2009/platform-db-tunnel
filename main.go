@@ -104,18 +104,32 @@ func serve(ctx context.Context) error {
 	}
 	defer db.Close()
 
+	// Never log the DSN: it contains the database credentials.
+	log.Printf("starting: driver=%s listen=%s queryTimeout=%s", cfg.Driver, cfg.Addr, cfg.QueryTimeout)
+	pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
+	if err := db.PingContext(pingCtx); err != nil {
+		log.Printf("WARNING: database not reachable yet: %v", err)
+	} else {
+		log.Printf("database connection ok")
+	}
+	cancelPing()
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           newHandler(db, cfg.QueryTimeout),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
+	go func() {
+		log.Printf("listening on http://%s", cfg.Addr)
+		errc <- srv.ListenAndServe()
+	}()
 
 	select {
 	case err := <-errc:
 		return err
 	case <-ctx.Done():
+		log.Printf("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)

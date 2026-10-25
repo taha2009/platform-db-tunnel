@@ -128,7 +128,15 @@ Get-Service PlatformDBTunnel
 curl http://127.0.0.1:8080/healthz
 ```
 
-Errors are written to the Windows Event Log (Event Viewer → Windows Logs → Application, source `PlatformDBTunnel`).
+### Logs
+
+`run` prints logs to the console: the startup settings (never the DSN), whether the database was reachable, the listen address, and one line per query with its outcome, row count, duration and the first 200 characters of the SQL. Bound arguments are never logged. Example:
+
+```
+2026/10/25 14:11:45 query ok rows=3 took=12ms sql="select * from users where id = $1"
+```
+
+When installed as a service there is no console, so only start/stop and fatal errors are written, to the Windows Event Log (Event Viewer → Windows Logs → Application, source `PlatformDBTunnel`). To see the full log, run `platform-db-tunnel.exe run` in a terminal.
 
 ### Other commands
 

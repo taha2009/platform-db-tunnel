@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ func newHandler(db *sql.DB, queryTimeout time.Duration) http.Handler {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
+			log.Printf("healthz: database unreachable: %v", err)
 			http.Error(w, "db unreachable", http.StatusServiceUnavailable)
 			return
 		}
@@ -43,15 +45,24 @@ func queryHandler(db *sql.DB, timeout time.Duration) http.HandlerFunc {
 		var req queryRequest
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.SQL) == "" {
+			log.Printf("query rejected: body must be JSON with a non-empty \"sql\" (from %s)", r.RemoteAddr)
 			http.Error(w, "body must be JSON with a non-empty \"sql\"", http.StatusBadRequest)
 			return
 		}
+
+		// One log line per query. The SQL text is shortened and the bound args are
+		// never logged, since they are the most likely place for sensitive values.
+		began, nrows, outcome := time.Now(), 0, "ok"
+		defer func() {
+			log.Printf("query %s rows=%d took=%s sql=%q", outcome, nrows, time.Since(began).Round(time.Millisecond), brief(req.SQL))
+		}()
 
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 
 		rows, err := db.QueryContext(ctx, req.SQL, req.Args...)
 		if err != nil {
+			outcome = "error: " + err.Error()
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -59,6 +70,7 @@ func queryHandler(db *sql.DB, timeout time.Duration) http.HandlerFunc {
 
 		cols, err := rows.Columns()
 		if err != nil {
+			outcome = "error: " + err.Error()
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -76,6 +88,7 @@ func queryHandler(db *sql.DB, timeout time.Duration) http.HandlerFunc {
 			bw.WriteString(`,"rows":[`)
 		}
 		fail := func(err error) {
+			outcome = "error: " + err.Error()
 			if bw == nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 				return
@@ -113,6 +126,7 @@ func queryHandler(db *sql.DB, timeout time.Duration) http.HandlerFunc {
 				bw.WriteByte(',')
 			}
 			bw.Write(row)
+			nrows++
 		}
 		if err := rows.Err(); err != nil {
 			fail(err)
@@ -124,6 +138,15 @@ func queryHandler(db *sql.DB, timeout time.Duration) http.HandlerFunc {
 		bw.WriteString("]}")
 		bw.Flush()
 	}
+}
+
+// brief collapses whitespace and shortens SQL for logging.
+func brief(q string) string {
+	q = strings.Join(strings.Fields(q), " ")
+	if r := []rune(q); len(r) > 200 {
+		return string(r[:200]) + "..."
+	}
+	return q
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
