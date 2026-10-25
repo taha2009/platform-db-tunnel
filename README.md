@@ -87,12 +87,19 @@ The app only listens on `127.0.0.1`, so only processes on the same machine can r
 
 ## Install as a Windows Service
 
-1. Copy `platform-db-tunnel.exe` to a permanent folder, e.g. `C:\Program Files\platform-db-tunnel\` (the service points at the exe's location, so don't move it afterwards).
+1. Copy `platform-db-tunnel.exe` to a permanent folder, e.g. `C:\platform-db-tunnel\` (the service points at the exe's location, so don't move it afterwards). `C:\Program Files\platform-db-tunnel\` also works.
 2. Create `config.json` next to it, as described above.
-3. From an **elevated** (Administrator) prompt:
+3. **Lock the folder down.** A folder you create directly on `C:\` is writable by ordinary users by default. The service runs with high privileges, so anyone who could replace the exe or edit `config.json` could run code as it. From an elevated prompt, allow only SYSTEM and Administrators (`C:\Program Files` is already protected like this):
 
 ```powershell
-cd "C:\Program Files\platform-db-tunnel"
+icacls C:\platform-db-tunnel /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
+```
+
+   If the app will run as a particular user (`--current-user` or `--at-logon` below), also grant that user read access, e.g. add `"DOMAIN\you:(OI)(CI)RX"`.
+4. From an **elevated** (Administrator) prompt:
+
+```powershell
+cd C:\platform-db-tunnel
 .\platform-db-tunnel.exe install
 ```
 
@@ -106,7 +113,22 @@ By default the service runs as `LocalSystem`. For SQL Server Windows authenticat
 
 The account is whoever is signed in, even from an elevated prompt. It must have a password: Windows refuses service logons for blank-password accounts ("The service did not start due to a logon failure"). If the password later changes, update it with `sc.exe config PlatformDBTunnel obj= "DOMAIN\you" password= "..."`.
 
-Check it:
+### Alternative: start at sign-in (no password needed)
+
+If the service can't run as the account you need (for example a Windows-authentication user with a blank password), install a scheduled task that starts the app whenever that user signs in:
+
+```powershell
+.\platform-db-tunnel.exe install --at-logon
+```
+
+This needs no elevation when run for your own account. It registers a task named `PlatformDBTunnel` that runs `platform-db-tunnel.exe run` as the user who ran the command, at each sign-in, and starts it straight away. It restarts up to 3 times (1 minute apart) on failure, and has no run-time limit. Remove it with `.\platform-db-tunnel.exe uninstall --at-logon`.
+
+Compared with the service:
+- It only runs while that user is signed in: nothing starts at boot, and it stops at sign-out.
+- It opens a console window that stays open; closing the window stops the app.
+- If a second user signs in, their copy exits with a port-in-use error, which is harmless.
+
+Check the service:
 
 ```powershell
 Get-Service PlatformDBTunnel

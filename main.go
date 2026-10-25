@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"bufio"
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -47,9 +47,23 @@ func main() {
 			log.Fatal(err)
 		}
 	case "install":
-		err = installService(len(os.Args) > 2 && os.Args[2] == "--current-user")
+		switch flag := optionArg(); flag {
+		case "--at-logon":
+			err = installLogonTask()
+		case "", "--current-user":
+			err = installService(flag == "--current-user")
+		default:
+			usage()
+		}
 	case "uninstall":
-		err = uninstallService()
+		switch optionArg() {
+		case "--at-logon":
+			err = uninstallLogonTask()
+		case "":
+			err = uninstallService()
+		default:
+			usage()
+		}
 	case "start":
 		err = controlService(func(s *mgr.Service) error { return s.Start() })
 	case "stop":
@@ -64,6 +78,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func optionArg() string {
+	if len(os.Args) > 2 {
+		return os.Args[2]
+	}
+	return ""
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: %s [run|install [--current-user|--at-logon]|uninstall [--at-logon]|start|stop]\n", filepath.Base(os.Args[0]))
+	os.Exit(2)
 }
 
 // serve runs the HTTP server until ctx is cancelled, then shuts down gracefully.
