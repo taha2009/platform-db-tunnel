@@ -81,7 +81,7 @@ The DSN (Data Source Name) is a single string with the host, port, credentials a
 
 Special characters in a password must be URL-encoded in the URL-style formats. Driver options go in the DSN too, e.g. `encrypt=disable` (SQL Server) or `sslmode=disable` (PostgreSQL).
 
-The file contains database credentials, so restrict who can read it (e.g. `icacls config.json /inheritance:r /grant:r "SYSTEM:R" "Administrators:F"`). Restart the service after editing it.
+Restart the service after editing it.
 
 The app only listens on `127.0.0.1`, so only processes on the same machine can reach it.
 
@@ -89,14 +89,7 @@ The app only listens on `127.0.0.1`, so only processes on the same machine can r
 
 1. Copy `platform-db-tunnel.exe` to a permanent folder, e.g. `C:\platform-db-tunnel\` (the service points at the exe's location, so don't move it afterwards). `C:\Program Files\platform-db-tunnel\` also works.
 2. Create `config.json` next to it, as described above.
-3. **Lock the folder down.** A folder you create directly on `C:\` is writable by ordinary users by default. The service runs with high privileges, so anyone who could replace the exe or edit `config.json` could run code as it. From an elevated prompt, allow only SYSTEM and Administrators (`C:\Program Files` is already protected like this):
-
-```powershell
-icacls C:\platform-db-tunnel /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
-```
-
-   If the app will run as a particular user (`--current-user` or `--at-logon` below), also grant that user read access, e.g. add `"DOMAIN\you:(OI)(CI)RX"`.
-4. From an **elevated** (Administrator) prompt:
+3. From an **elevated** (Administrator) prompt:
 
 ```powershell
 cd C:\platform-db-tunnel
