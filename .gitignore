@@ -1,2 +1,4 @@
 platform-db-tunnel.exe
 config.json
+*.log
+*.log.gz

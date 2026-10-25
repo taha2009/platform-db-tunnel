@@ -136,7 +136,13 @@ curl http://127.0.0.1:8080/healthz
 2026/10/25 14:11:45 query ok rows=3 took=12ms sql="select * from users where id = $1"
 ```
 
-When installed as a service there is no console, so only start/stop and fatal errors are written, to the Windows Event Log (Event Viewer → Windows Logs → Application, source `PlatformDBTunnel`). To see the full log, run `platform-db-tunnel.exe run` in a terminal.
+Both `run` and the service also write the same lines to `platform-db-tunnel.log` in the exe's folder, so the logs survive after a console window closes. The file rotates at 10 MB, keeping 5 compressed backups for up to 30 days. Follow it live with:
+
+```powershell
+Get-Content C:\platform-db-tunnel\platform-db-tunnel.log -Wait -Tail 50
+```
+
+If the account running the app can't write to that folder (for example a non-admin user in `C:\Program Files`), it logs a warning and uses the console only. The service also writes start, stop and fatal errors to the Windows Event Log (Event Viewer → Windows Logs → Application, source `PlatformDBTunnel`).
 
 ### Other commands
 

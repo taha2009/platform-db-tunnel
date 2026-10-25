@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/microsoft/go-mssqldb v1.11.2
 	golang.org/x/sys v0.49.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

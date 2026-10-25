@@ -31,6 +31,7 @@ func main() {
 		log.Fatalf("detect service mode: %v", err)
 	}
 	if isService {
+		setupLogging(false)
 		runService()
 		return
 	}
@@ -41,6 +42,7 @@ func main() {
 	}
 	switch cmd {
 	case "run":
+		setupLogging(true)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		if err := serve(ctx); err != nil {
