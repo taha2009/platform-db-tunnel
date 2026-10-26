@@ -15,6 +15,7 @@ type config struct {
 	Addr   string
 	Driver string // database/sql driver name
 	DSN    string
+	Path   string // config.json that was loaded
 	// QueryTimeout bounds one /query call, including reading all rows.
 	QueryTimeout time.Duration
 }
@@ -67,6 +68,7 @@ func loadConfig() (*config, error) {
 		Addr:         "127.0.0.1:" + f.Port,
 		Driver:       driver,
 		DSN:          f.DSN,
+		Path:         path,
 		QueryTimeout: time.Duration(f.QueryTimeoutSeconds) * time.Second,
 	}, nil
 }

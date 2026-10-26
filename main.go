@@ -107,6 +107,8 @@ func serve(ctx context.Context) error {
 	defer db.Close()
 
 	// Never log the DSN: it contains the database credentials.
+	log.Printf("config loaded from %s", cfg.Path)
+	log.Printf("database: %s", describeDSN(cfg.DSN))
 	log.Printf("starting: driver=%s listen=%s queryTimeout=%s", cfg.Driver, cfg.Addr, cfg.QueryTimeout)
 	pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
 	if err := db.PingContext(pingCtx); err != nil {
