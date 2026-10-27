@@ -103,3 +103,30 @@ func TestQueryErrorBeforeRowsIs400(t *testing.T) {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)
 	}
 }
+
+func TestCellValue(t *testing.T) {
+	guid := []byte{0x78, 0x56, 0x34, 0x12, 0xbc, 0x9a, 0xf0, 0xde, 1, 2, 3, 4, 5, 6, 7, 8}
+	cases := []struct {
+		in       any
+		typeName string
+		want     any
+	}{
+		{[]byte("12.50"), "MONEY", "12.50"},
+		{[]byte{0, 255, 1}, "VARBINARY", "AP8B"},
+		{guid, "UNIQUEIDENTIFIER", "12345678-9abc-def0-0102-030405060708"},
+		{int64(7), "INT", int64(7)},
+		{nil, "VARBINARY", nil},
+	}
+	for _, c := range cases {
+		if got := cellValue(c.in, c.typeName); got != c.want {
+			t.Errorf("cellValue(%v, %s) = %v, want %v", c.in, c.typeName, got, c.want)
+		}
+	}
+}
+
+func TestQueryReportsColumnTypes(t *testing.T) {
+	_, out := post(t, "empty")
+	if types, ok := out["types"].([]any); !ok || len(types) != 2 {
+		t.Fatalf("types = %v", out["types"])
+	}
+}

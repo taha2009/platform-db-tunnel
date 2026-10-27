@@ -14,7 +14,9 @@ curl -X POST http://127.0.0.1:8080/query \
   -d '{"sql": "select * from users where id = @p1", "args": [42]}'
 ```
 
-Response: `{"columns": ["id", "name"], "rows": [[42, "alice"]]}`
+Response: `{"columns": ["id", "name"], "types": ["INT", "NVARCHAR"], "rows": [[42, "alice"]]}`
+
+`types` is the driver's type name for each column (upper case, empty when the driver doesn't report one). JSON can't tell dates, decimals and bytes apart from text, so clients use it to: parse `DATETIME`/`DATE`/... strings back into dates, and decode **binary columns** (`BINARY`, `VARBINARY`, `IMAGE`, `BYTEA`, `BLOB`, ...), which are sent base64-encoded. SQL Server `UNIQUEIDENTIFIER` columns are sent as the canonical `xxxxxxxx-xxxx-...` text. Versions before this field was added sent binary and GUID values as corrupted text and no `types`.
 
 Arguments bind positionally, using the placeholder style of the chosen database:
 
