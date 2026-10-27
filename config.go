@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -32,7 +33,7 @@ var configNames = []string{"config.json", "config.txt"}
 // fileConfig is the config file, which must sit beside the executable (a
 // service's working directory is System32, so we can't rely on a relative path).
 //
-//	type  mssql (default), postgres or mysql
+//	type  mssql, postgres or mysql (default: guessed from the dsn)
 //	dsn   driver-specific connection string (required)
 //	port  listen port on 127.0.0.1 (default 8080)
 //	queryTimeoutSeconds  max duration of one query incl. reading rows (default 1800)
@@ -69,6 +70,18 @@ func findConfig(dir string) (path string, ignored []string, err error) {
 	return "", nil, fmt.Errorf("config: no config.json or config.txt in %s", dir)
 }
 
+// inferType guesses the database type from the DSN when "type" is not given.
+func inferType(dsn string) string {
+	l := strings.ToLower(dsn)
+	switch {
+	case strings.HasPrefix(l, "postgres://"), strings.HasPrefix(l, "postgresql://"):
+		return "postgres"
+	case strings.Contains(l, "@tcp(") && !strings.Contains(l, "://"), strings.Contains(l, "@unix("):
+		return "mysql"
+	}
+	return "mssql"
+}
+
 // parseConfig reads the contents of a config file. A UTF-8 byte-order mark,
 // which Notepad adds, is accepted.
 func parseConfig(b []byte, path string) (*config, error) {
@@ -77,14 +90,17 @@ func parseConfig(b []byte, path string) (*config, error) {
 		return nil, fmt.Errorf("config: %s is saved as UTF-16; save it again as UTF-8 (Notepad: Save As > Encoding > UTF-8)", path)
 	}
 	var f fileConfig
-	if err := json.Unmarshal(b, &f); err != nil {
+	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] != '{' {
+		// Not JSON: the whole file is the DSN.
+		f.DSN = string(t)
+	} else if err := json.Unmarshal(b, &f); err != nil {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
 	if f.DSN == "" {
 		return nil, errors.New(`config: "dsn" is required in ` + path)
 	}
 	if f.Type == "" {
-		f.Type = "mssql"
+		f.Type = inferType(f.DSN)
 	}
 	if f.Port == "" {
 		f.Port = "8080"

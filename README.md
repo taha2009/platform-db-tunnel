@@ -60,7 +60,7 @@ The workflow vets and builds the Windows exe, then creates a GitHub Release with
 
 Create `config.json` in the same folder as `platform-db-tunnel.exe`. It is the only source of settings; environment variables are not read.
 
-`config.txt` is accepted too, with exactly the same contents. It is handy on machines that hide file extensions, where `config.json` is awkward to create in Notepad. If both exist, `config.json` is used and the other is ignored (with a warning in the log). Notepad's UTF-8 byte-order mark is fine; a file saved as UTF-16 is rejected with a message to save it as UTF-8. A file named `config.json.txt` (Windows hiding the real extension) is not used, but the error names it so you can rename it.
+`config.txt` is accepted too. It can hold the same JSON, or just the connection string on its own with nothing else (no braces, no quotes); in that case the port is `8080` and the other settings are the defaults. For example, the entire file can be one line: `sqlserver://localhost/SQLEXPRESS?database=MyDb&encrypt=disable`. The file is treated as JSON if its first character is `{`, whichever file name it has. It is handy on machines that hide file extensions, where `config.json` is awkward to create in Notepad. If both exist, `config.json` is used and the other is ignored (with a warning in the log). Notepad's UTF-8 byte-order mark is fine; a file saved as UTF-16 is rejected with a message to save it as UTF-8. A file named `config.json.txt` (Windows hiding the real extension) is not used, but the error names it so you can rename it.
 
 ```json
 {
@@ -73,7 +73,7 @@ Create `config.json` in the same folder as `platform-db-tunnel.exe`. It is the o
 
 | Key    | Purpose                                              | Default |
 |--------|------------------------------------------------------|---------|
-| `type` | `mssql`, `postgres` or `mysql`                       | `mssql` |
+| `type` | `mssql`, `postgres` or `mysql`. Optional: guessed from the `dsn` (`postgres://` is PostgreSQL, `user:pass@tcp(...)/db` is MySQL, anything else is SQL Server) | guessed |
 | `dsn`  | Connection string for the database (required)        |         |
 | `port` | Port to listen on (always bound to `127.0.0.1`)      | `8080`  |
 | `queryTimeoutSeconds` | Max duration of one query, including reading all its rows | `1800` (30 min) |

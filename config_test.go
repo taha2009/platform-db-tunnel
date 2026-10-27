@@ -44,6 +44,34 @@ func TestFindConfigHiddenExtension(t *testing.T) {
 	}
 }
 
+func TestParseConfigBareDSNAndInferredType(t *testing.T) {
+	for dsn, driver := range map[string]string{
+		"sqlserver://localhost/SQLEXPRESS?database=x&encrypt=disable": "sqlserver",
+		"postgres://u:p@localhost/db":                                 "pgx",
+		"postgresql://u:p@localhost/db":                               "pgx",
+		"u:p@tcp(localhost:3306)/db":                                  "mysql",
+	} {
+		// Bare DSN, with a trailing newline and a BOM as Notepad would write.
+		bare := append([]byte{0xEF, 0xBB, 0xBF}, dsn+"\r\n"...)
+		c, err := parseConfig(bare, "x")
+		if err != nil || c.Driver != driver || c.DSN != dsn || c.Addr != "127.0.0.1:8080" {
+			t.Errorf("bare %q: %+v %v", dsn, c, err)
+		}
+		// JSON without "type" infers the same driver.
+		c, err = parseConfig([]byte(`{"dsn":"`+dsn+`"}`), "x")
+		if err != nil || c.Driver != driver {
+			t.Errorf("json %q: %+v %v", dsn, c, err)
+		}
+	}
+	// An explicit type still wins.
+	if c, err := parseConfig([]byte(`{"type":"mysql","dsn":"postgres://x"}`), "x"); err != nil || c.Driver != "mysql" {
+		t.Errorf("explicit type: %+v %v", c, err)
+	}
+	if _, err := parseConfig([]byte("  \r\n"), "x"); err == nil {
+		t.Error("blank file must fail")
+	}
+}
+
 func TestParseConfig(t *testing.T) {
 	c, err := parseConfig([]byte(goodConfig), "x")
 	if err != nil || c.Addr != "127.0.0.1:9000" || c.Driver != "pgx" || c.QueryTimeout.Minutes() != 30 {
