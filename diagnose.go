@@ -157,14 +157,17 @@ func diagEnvironment(r *report) {
 }
 
 func diagConfig(r *report) *config {
-	r.section("config.json")
+	r.section("config file (config.json or config.txt)")
 	cfg, err := loadConfig()
 	if err != nil {
 		r.warn("%v", err)
-		r.hint("put config.json next to the exe (see README), or pass --dsn to test a connection string directly")
+		r.hint("put config.json (or config.txt, same contents) next to the exe (see README), or pass --dsn to test a connection string directly")
 		return nil
 	}
 	r.ok("loaded %s", cfg.Path)
+	for _, p := range cfg.Ignored {
+		r.warn("%s also exists and is ignored: %s takes precedence", p, filepath.Base(cfg.Path))
+	}
 	r.info("type: driver=%s, listen=%s, timeout=%s", cfg.Driver, cfg.Addr, cfg.QueryTimeout)
 	if ln, err := net.Listen("tcp", cfg.Addr); err != nil {
 		c := http.Client{Timeout: 3 * time.Second}

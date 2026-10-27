@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,13 +16,21 @@ type config struct {
 	Addr   string
 	Driver string // database/sql driver name
 	DSN    string
-	Path   string // config.json that was loaded
+	Path   string // config file that was loaded
+	// Ignored lists other config files found beside it (config.json wins over
+	// config.txt), so the log can say so.
+	Ignored []string
 	// QueryTimeout bounds one /query call, including reading all rows.
 	QueryTimeout time.Duration
 }
 
-// fileConfig is config.json, which must sit beside the executable (a service's
-// working directory is System32, so we can't rely on a relative path).
+// configNames are the accepted file names, in order of preference. config.txt
+// has exactly the same JSON content; it exists because it is easier to create
+// and edit with Notepad on machines that hide file extensions.
+var configNames = []string{"config.json", "config.txt"}
+
+// fileConfig is the config file, which must sit beside the executable (a
+// service's working directory is System32, so we can't rely on a relative path).
 //
 //	type  mssql (default), postgres or mysql
 //	dsn   driver-specific connection string (required)
@@ -34,15 +43,38 @@ type fileConfig struct {
 	QueryTimeoutSeconds int    `json:"queryTimeoutSeconds"`
 }
 
-func loadConfig() (*config, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return nil, err
+// findConfig returns the config file to use in dir and any other candidates
+// that were ignored.
+func findConfig(dir string) (path string, ignored []string, err error) {
+	for _, n := range configNames {
+		p := filepath.Join(dir, n)
+		if fi, serr := os.Stat(p); serr == nil && !fi.IsDir() {
+			if path == "" {
+				path = p
+			} else {
+				ignored = append(ignored, p)
+			}
+		}
 	}
-	path := filepath.Join(filepath.Dir(exe), "config.json")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("config: %w", err)
+	if path != "" {
+		return path, ignored, nil
+	}
+	// The classic Windows mistake: with extensions hidden, Notepad saves
+	// "config.json" as "config.json.txt".
+	for _, n := range []string{"config.json.txt", "config.txt.txt"} {
+		if _, serr := os.Stat(filepath.Join(dir, n)); serr == nil {
+			return "", nil, fmt.Errorf("config: found %s in %s, but the real name is %s: Windows is hiding the .txt extension. Rename it to config.json (or config.txt)", n, dir, n[:len(n)-len(".txt")])
+		}
+	}
+	return "", nil, fmt.Errorf("config: no config.json or config.txt in %s", dir)
+}
+
+// parseConfig reads the contents of a config file. A UTF-8 byte-order mark,
+// which Notepad adds, is accepted.
+func parseConfig(b []byte, path string) (*config, error) {
+	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
+	if bytes.HasPrefix(b, []byte{0xFF, 0xFE}) || bytes.HasPrefix(b, []byte{0xFE, 0xFF}) {
+		return nil, fmt.Errorf("config: %s is saved as UTF-16; save it again as UTF-8 (Notepad: Save As > Encoding > UTF-8)", path)
 	}
 	var f fileConfig
 	if err := json.Unmarshal(b, &f); err != nil {
@@ -71,4 +103,25 @@ func loadConfig() (*config, error) {
 		Path:         path,
 		QueryTimeout: time.Duration(f.QueryTimeoutSeconds) * time.Second,
 	}, nil
+}
+
+func loadConfig() (*config, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	path, ignored, err := findConfig(filepath.Dir(exe))
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	cfg, err := parseConfig(b, path)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Ignored = ignored
+	return cfg, nil
 }

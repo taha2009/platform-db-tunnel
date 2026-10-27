@@ -60,6 +60,8 @@ The workflow vets and builds the Windows exe, then creates a GitHub Release with
 
 Create `config.json` in the same folder as `platform-db-tunnel.exe`. It is the only source of settings; environment variables are not read.
 
+`config.txt` is accepted too, with exactly the same contents. It is handy on machines that hide file extensions, where `config.json` is awkward to create in Notepad. If both exist, `config.json` is used and the other is ignored (with a warning in the log). Notepad's UTF-8 byte-order mark is fine; a file saved as UTF-16 is rejected with a message to save it as UTF-8. A file named `config.json.txt` (Windows hiding the real extension) is not used, but the error names it so you can rename it.
+
 ```json
 {
   "type": "postgres",
@@ -119,7 +121,7 @@ The app only listens on `127.0.0.1`, so only processes on the same machine can r
 ## Install as a Windows Service
 
 1. Copy `platform-db-tunnel.exe` to a permanent folder, e.g. `C:\platform-db-tunnel\` (the service points at the exe's location, so don't move it afterwards). `C:\Program Files\platform-db-tunnel\` also works.
-2. Create `config.json` next to it, as described above.
+2. Create `config.json` (or `config.txt`) next to it, as described above.
 3. From an **elevated** (Administrator) prompt:
 
 ```powershell
@@ -189,7 +191,7 @@ If the account running the app can't write to that folder (for example a non-adm
 It reports, in order:
 
 - **This machine:** Windows version, the account it runs as, whether it is elevated, and whether the exe folder is writable.
-- **config.json:** whether it loads, the DSN with the password hidden, and whether the listen port is free or already used by this app.
+- **config file:** whether `config.json` or `config.txt` loads, the DSN with the password hidden, and whether the listen port is free or already used by this app.
 - **Windows services:** the SQL Server engine, SQL Browser and agent services with their state, start type and account.
 - **Installed instances (registry):** version and edition, whether TCP/IP is enabled, the TCP port, Windows-only versus mixed authentication, and Force Encryption.
 - **Network:** the instances SQL Browser announces, and the TCP ports `sqlservr.exe` is actually listening on. A running SQL Server with no listening port means TCP/IP is disabled.

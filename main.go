@@ -115,6 +115,9 @@ func serve(ctx context.Context) error {
 	// Never log the DSN: it contains the database credentials.
 	log.Printf("platform-db-tunnel %s", version)
 	log.Printf("config loaded from %s", cfg.Path)
+	for _, p := range cfg.Ignored {
+		log.Printf("WARNING: also found %s; it is ignored because %s takes precedence", p, filepath.Base(cfg.Path))
+	}
 	log.Printf("database: %s", describeDSN(cfg.DSN))
 	log.Printf("starting: driver=%s listen=%s queryTimeout=%s", cfg.Driver, cfg.Addr, cfg.QueryTimeout)
 	pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
