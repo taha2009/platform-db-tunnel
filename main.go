@@ -113,6 +113,7 @@ func serve(ctx context.Context) error {
 	defer db.Close()
 
 	// Never log the DSN: it contains the database credentials.
+	log.Printf("platform-db-tunnel %s", version)
 	log.Printf("config loaded from %s", cfg.Path)
 	log.Printf("database: %s", describeDSN(cfg.DSN))
 	log.Printf("starting: driver=%s listen=%s queryTimeout=%s", cfg.Driver, cfg.Addr, cfg.QueryTimeout)

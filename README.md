@@ -7,6 +7,7 @@ A small HTTP service that runs SQL against a local database: SQL Server, Postgre
 | Method | Path       | Description                                   |
 |--------|------------|-----------------------------------------------|
 | GET    | `/healthz` | Returns `ok`, or 503 if the database is down  |
+| GET    | `/version` | Returns `{"version": "v1.0.11"}`, the release tag the exe was built from (`dev` for a local build) |
 | POST   | `/query`   | Runs SQL and returns rows as JSON             |
 
 ```bash

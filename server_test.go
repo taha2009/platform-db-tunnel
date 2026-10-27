@@ -130,3 +130,12 @@ func TestQueryReportsColumnTypes(t *testing.T) {
 		t.Fatalf("types = %v", out["types"])
 	}
 }
+
+func TestVersionEndpoint(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newHandler(nil, time.Minute).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/version", nil))
+	var out map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != 200 || out["version"] != version {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)
+	}
+}
