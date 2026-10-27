@@ -194,11 +194,41 @@ It reports, in order:
 
 Every failure comes with the usual cause and fix. The whole report is also saved as `platform-db-tunnel-diagnose.txt` beside the exe (or in the temp folder when that folder is not writable), so it can be sent for review. It contains machine and instance names but no passwords.
 
+### Enable SQL authentication and create a login
+
+Use these when a SQL Server only allows Windows authentication and the app needs a username and password instead. Unlike `diagnose`, **these change the customer's SQL Server**. Each one prints exactly what it will do, supports `--dry-run`, and asks you to type `yes` (skip with `--yes`).
+
+**1. `enable-sql-auth`** switches the instance to mixed mode (SQL Server and Windows authentication). Run it from an **elevated** prompt.
+
+```powershell
+.\platform-db-tunnel.exe enable-sql-auth --dry-run   # show what would change
+.\platform-db-tunnel.exe enable-sql-auth             # change it, then ask whether to restart now
+.\platform-db-tunnel.exe enable-sql-auth --instance SQLEXPRESS --restart --yes
+```
+
+It sets `LoginMode` to 2 in the instance's registry key (the same setting as SSMS > Server Properties > Security). The change only takes effect after the SQL Server service restarts, and **a restart disconnects every user of that SQL Server** and stops SQL Server Agent while it runs, so do it when nobody is working. Without `--restart` it asks, and if you answer no it prints the commands to restart later. Use `--instance` when several instances are installed (`default` means `MSSQLSERVER`).
+
+**2. `create-sql-login`** creates a SQL login with **read-only** access (`db_datareader`) to one database. It connects with your own Windows account, which must be a SQL Server `sysadmin` (usually the account that installed SQL Server) and does not need to be elevated.
+
+```powershell
+.\platform-db-tunnel.exe create-sql-login --login tunnel --database ACCDATA --generate
+.\platform-db-tunnel.exe create-sql-login --login tunnel --database ACCDATA --dry-run
+.\platform-db-tunnel.exe create-sql-login --login tunnel --database ACCDATA --reset-password
+```
+
+- The password is prompted for twice (never taken on the command line), or generated with `--generate` and shown once. Generated passwords use letters and digits only, so they never need URL-encoding in the DSN.
+- The login's password does not expire and is not subject to Windows password policy (`CHECK_EXPIRATION = OFF`, `CHECK_POLICY = OFF`), so the service does not stop working months later.
+- It refuses to run if the server is still Windows-authentication-only (run `enable-sql-auth` and restart first), if your account is not `sysadmin`, or if the login already exists (use `--reset-password` to set a new password).
+- It then signs in as the new login to check it works, and prints the `"dsn"` line for `config.json`, including any `tlsmin` / `TrustServerCertificate` option the server needed.
+- `--login` accepts letters, digits and underscore only, and not `sa`. Logins with more access (for example `db_owner`) are deliberately not created by this tool.
+
 ### Other commands
 
 ```powershell
 .\platform-db-tunnel.exe run         # run in the console (default), useful for debugging
 .\platform-db-tunnel.exe diagnose    # inspect the machine and the SQL Server connection (read-only)
+.\platform-db-tunnel.exe enable-sql-auth    # switch SQL Server to mixed mode (changes the server; see above)
+.\platform-db-tunnel.exe create-sql-login   # create a read-only SQL login (changes the server; see above)
 .\platform-db-tunnel.exe start       # start the service
 .\platform-db-tunnel.exe stop        # stop the service
 .\platform-db-tunnel.exe uninstall   # stop and remove the service

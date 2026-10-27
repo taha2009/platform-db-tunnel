@@ -68,6 +68,10 @@ func main() {
 		}
 	case "diagnose":
 		err = runDiagnose(os.Args[2:])
+	case "enable-sql-auth":
+		err = runEnableSQLAuth(os.Args[2:])
+	case "create-sql-login":
+		err = runCreateSQLLogin(os.Args[2:])
 	case "start":
 		err = controlService(func(s *mgr.Service) error { return s.Start() })
 	case "stop":
@@ -76,7 +80,7 @@ func main() {
 			return err
 		})
 	default:
-		fmt.Fprintf(os.Stderr, "usage: %s [run|install [--current-user|--at-logon]|uninstall [--at-logon]|diagnose|start|stop]\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "usage: %s [run|install [--current-user|--at-logon]|uninstall [--at-logon]|diagnose|enable-sql-auth|create-sql-login|start|stop]\n", filepath.Base(os.Args[0]))
 		os.Exit(2)
 	}
 	if err != nil {
@@ -92,7 +96,7 @@ func optionArg() string {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [run|install [--current-user|--at-logon]|uninstall [--at-logon]|diagnose|start|stop]\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(os.Stderr, "usage: %s [run|install [--current-user|--at-logon]|uninstall [--at-logon]|diagnose|enable-sql-auth|create-sql-login|start|stop]\n", filepath.Base(os.Args[0]))
 	os.Exit(2)
 }
 

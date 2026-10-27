@@ -67,3 +67,74 @@ func TestBuildDSN(t *testing.T) {
 		t.Errorf("password must be URL-encoded: %q", got)
 	}
 }
+
+func TestQuoting(t *testing.T) {
+	if got := quoteIdent("a]b"); got != "[a]]b]" {
+		t.Errorf("quoteIdent = %q", got)
+	}
+	if got := quoteLiteral("it's"); got != "N'it''s'" {
+		t.Errorf("quoteLiteral = %q", got)
+	}
+	for _, bad := range []string{"", "a b", "a;drop", "a]b", "x'y", strings.Repeat("a", 65)} {
+		if identRe.MatchString(bad) {
+			t.Errorf("identRe accepted %q", bad)
+		}
+	}
+	if !identRe.MatchString("tunnel_ro1") {
+		t.Error("identRe rejected a normal name")
+	}
+}
+
+func TestGenPassword(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 50; i++ {
+		p, err := genPassword(20)
+		if err != nil || len(p) != 20 || seen[p] {
+			t.Fatalf("genPassword = %q, %v (dup=%v)", p, err, seen[p])
+		}
+		seen[p] = true
+		if strings.ContainsAny(p, "0O1lI") {
+			t.Errorf("ambiguous character in %q", p)
+		}
+	}
+}
+
+func TestLoginStatements(t *testing.T) {
+	got := loginStatements("tunnel", "ACC]DATA", "N'x'", false, false, false)
+	want := []string{
+		"CREATE LOGIN [tunnel] WITH PASSWORD = N'x', DEFAULT_DATABASE = [ACC]]DATA], CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF",
+		"CREATE USER [tunnel] FOR LOGIN [tunnel]",
+		"ALTER ROLE db_datareader ADD MEMBER [tunnel]",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("new login:\n%v", got)
+	}
+	got = loginStatements("tunnel", "d", "N'x'", true, true, true)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "ALTER LOGIN [tunnel] WITH PASSWORD") || strings.Contains(got[1], "CREATE USER") {
+		t.Errorf("reset existing login:\n%v", got)
+	}
+	got = loginStatements("tunnel", "d", "N'x'", true, false, false)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "CREATE USER") {
+		t.Errorf("existing login, new user:\n%v", got)
+	}
+}
+
+func TestPickInstance(t *testing.T) {
+	all := []regInstance{{"MSSQLSERVER", "MSSQL16.MSSQLSERVER"}, {"SQLEXPRESS", "MSSQL15.SQLEXPRESS"}}
+	if _, err := pickInstance(all, ""); err == nil {
+		t.Error("several instances without --instance must be an error")
+	}
+	if i, err := pickInstance(all, "default"); err != nil || i.Name != "MSSQLSERVER" {
+		t.Errorf("default = %v, %v", i, err)
+	}
+	if i, err := pickInstance(all, "sqlexpress"); err != nil || i.ID != "MSSQL15.SQLEXPRESS" {
+		t.Errorf("named = %v, %v", i, err)
+	}
+	if i, err := pickInstance(all[:1], ""); err != nil || i.Name != "MSSQLSERVER" {
+		t.Errorf("single = %v, %v", i, err)
+	}
+	e, a := serviceNames("SQLEXPRESS")
+	if e != "MSSQL$SQLEXPRESS" || a != "SQLAgent$SQLEXPRESS" {
+		t.Errorf("serviceNames = %s, %s", e, a)
+	}
+}
