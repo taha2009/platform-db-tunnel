@@ -100,6 +100,7 @@ func runDiagnose(args []string) error {
 	if cfg != nil && dsn == "" {
 		driver, dsn = cfg.Driver, cfg.DSN
 	}
+	configured := ""
 	if dsn != "" {
 		r.section("Connection using the configured DSN")
 		r.info("%s", describeDSN(dsn))
@@ -108,13 +109,15 @@ func runDiagnose(args []string) error {
 			r.hint(explain(err.Error()))
 		} else {
 			r.ok("connected with the configured DSN")
+			configured = dsn
 			if driver == "sqlserver" {
 				diagDetails(r, driver, dsn)
 			}
 		}
 	}
 
-	diagProbe(r, insts, listeners, *userFlag, password, *dbFlag)
+	res := diagProbe(r, insts, listeners, *userFlag, password, *dbFlag)
+	diagRecommend(r, res, *dbFlag, *userFlag, password, configured)
 
 	r.section("Summary")
 	r.info("%d problem(s), %d warning(s)", r.fails, r.warns)
@@ -380,20 +383,34 @@ type listener struct {
 // browserInfo is one instance announced by the SQL Browser service.
 type browserInfo map[string]string
 
+// queryBrowser asks the local SQL Browser service (UDP 1434) which instances
+// exist and on which TCP ports.
+func queryBrowser() ([]browserInfo, error) {
+	conn, err := net.DialTimeout("udp", "127.0.0.1:1434", 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write([]byte{0x03}); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 65535)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	return parseBrowser(buf[:n]), nil
+}
+
 func diagNetwork(r *report) []listener {
 	r.section("Network")
-	if conn, err := net.DialTimeout("udp", "127.0.0.1:1434", 2*time.Second); err == nil {
-		conn.SetDeadline(time.Now().Add(2 * time.Second))
-		conn.Write([]byte{0x03})
-		buf := make([]byte, 65535)
-		if n, err := conn.Read(buf); err == nil {
-			for _, b := range parseBrowser(buf[:n]) {
-				r.info("SQL Browser: instance %q on server %s, tcp port %s", b["InstanceName"], b["ServerName"], b["tcp"])
-			}
-		} else {
-			r.info("SQL Browser did not answer on UDP 1434 (service stopped, or only a default instance exists - fine when connecting by port)")
+	if bi, err := queryBrowser(); err == nil {
+		for _, b := range bi {
+			r.info("SQL Browser: instance %q on server %s, tcp port %s", b["InstanceName"], b["ServerName"], b["tcp"])
 		}
-		conn.Close()
+	} else {
+		r.info("SQL Browser did not answer on UDP 1434 (service stopped, or only a default instance exists - fine when connecting by port)")
 	}
 
 	pids := sqlPIDs()
@@ -518,11 +535,27 @@ func buildDSN(host string, port int, db, user, password, opts string) string {
 	if user != "" {
 		u.User = url.UserPassword(user, password)
 	}
-	q := "database=" + url.QueryEscape(db)
+	u.RawQuery = dsnQuery(db, opts)
+	return u.String()
+}
+
+// dsnQuery builds the query part of a DSN. Spaces are written as %20, not +.
+func dsnQuery(db, opts string) string {
+	q := "database=" + strings.ReplaceAll(url.QueryEscape(db), "+", "%20")
 	if opts != "" {
 		q += "&" + opts
 	}
-	u.RawQuery = q
+	return q
+}
+
+// buildInstanceDSN addresses a named instance through SQL Browser, so it keeps
+// working when the instance's dynamic TCP port changes.
+func buildInstanceDSN(host, instance, db, user, password, opts string) string {
+	u := url.URL{Scheme: "sqlserver", Host: host, Path: "/" + instance}
+	if user != "" {
+		u.User = url.UserPassword(user, password)
+	}
+	u.RawQuery = dsnQuery(db, opts)
 	return u.String()
 }
 
@@ -544,8 +577,9 @@ type endpoint struct {
 
 // diagProbe tries each place SQL Server could be reached, with the connection
 // option combinations that old or default-configured servers need.
-func diagProbe(r *report, insts []instance, ls []listener, user, password, db string) {
+func diagProbe(r *report, insts []instance, ls []listener, user, password, db string) *probeResult {
 	r.section("Connection probes")
+	var res *probeResult
 	seen := map[endpoint]bool{}
 	var eps []endpoint
 	add := func(host string, port int) {
@@ -607,8 +641,11 @@ func diagProbe(r *report, insts []instance, ls []listener, user, password, db st
 				if user == "" {
 					show = buildDSN(e.Host, e.Port, db, "", "", v.opts)
 				}
-				r.info(`config.json: "dsn": %q  (use your real database instead of %s; URL-encode special characters in the password)`, show, db)
-				diagDetails(r, "sqlserver", buildDSN(e.Host, e.Port, db, user, password, v.opts))
+				r.info("this endpoint works with: %s", show)
+				dbs := diagDetails(r, "sqlserver", buildDSN(e.Host, e.Port, db, user, password, v.opts))
+				if res == nil {
+					res = &probeResult{EP: e, Opts: v.opts, DBs: dbs}
+				}
 				break
 			}
 			r.info("%s: options [%s] -> %v", addr, v.name, err)
@@ -626,13 +663,15 @@ func diagProbe(r *report, insts []instance, ls []listener, user, password, db st
 		r.fail("could not log in on any endpoint")
 		r.hint("fix the first FAIL above; if the TCP port is open but every option fails, the messages show which option is needed")
 	}
+	return res
 }
 
 // diagDetails reports who we are on the server and what we can see.
-func diagDetails(r *report, driver, dsn string) {
+// It returns the user databases the login can open.
+func diagDetails(r *report, driver, dsn string) []string {
 	db, err := sql.Open(driver, dsn)
 	if err != nil {
-		return
+		return nil
 	}
 	defer db.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -645,7 +684,7 @@ func diagDetails(r *report, driver, dsn string) {
 		Scan(&ver, &login, &cur, &sysadmin, &winOnly)
 	if err != nil {
 		r.info("  (could not read server details: %v)", err)
-		return
+		return nil
 	}
 	r.info("  server: %s", strings.SplitN(strings.TrimSpace(ver.String), "\n", 2)[0])
 	r.info("  logged in as %s, database %s, sysadmin=%v", login.String, cur.String, sysadmin.Int64 == 1)
@@ -661,11 +700,11 @@ func diagDetails(r *report, driver, dsn string) {
 		rows, err = db.QueryContext(ctx, `select name, 'ONLINE', cast(has_dbaccess(name) as int) from master.dbo.sysdatabases order by name`)
 		if err != nil {
 			r.info("  (could not list databases: %v)", first)
-			return
+			return nil
 		}
 	}
 	defer rows.Close()
-	var parts []string
+	var parts, usable []string
 	for rows.Next() {
 		var name, state string
 		var access sql.NullInt64
@@ -678,6 +717,8 @@ func diagDetails(r *report, driver, dsn string) {
 			mark = " [" + state + "]"
 		} else if access.Valid && access.Int64 == 0 {
 			mark = " [no access]"
+		} else if !systemDatabases[strings.ToLower(name)] {
+			usable = append(usable, name)
 		}
 		parts = append(parts, name+mark)
 	}
@@ -685,6 +726,7 @@ func diagDetails(r *report, driver, dsn string) {
 		r.info("  (database list incomplete: %v)", err)
 	}
 	r.info("  databases: %s", strings.Join(parts, ", "))
+	return usable
 }
 
 // explain turns a driver or OS error into the usual cause and fix.
