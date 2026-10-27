@@ -172,10 +172,33 @@ Get-Content C:\platform-db-tunnel\platform-db-tunnel.log -Wait -Tail 50
 
 If the account running the app can't write to that folder (for example a non-admin user in `C:\Program Files`), it logs a warning and uses the console only. The service also writes start, stop and fatal errors to the Windows Event Log (Event Viewer → Windows Logs → Application, source `PlatformDBTunnel`).
 
+### Diagnose a SQL Server connection
+
+`diagnose` inspects the machine and tries to connect, so a problem can be understood without guessing. It only reads: it never changes SQL Server or Windows. It works without administrator rights (registry values that need them are marked; rerun from an elevated prompt for full detail).
+
+```powershell
+.\platform-db-tunnel.exe diagnose                    # uses config.json if present, and probes the machine
+.\platform-db-tunnel.exe diagnose --user sa          # also try a SQL login (the password is asked for, never printed)
+.\platform-db-tunnel.exe diagnose --dsn "sqlserver://localhost:1433?database=mydb"
+.\platform-db-tunnel.exe diagnose --database ACCDATA # database to connect to while probing (default: master)
+```
+
+It reports, in order:
+
+- **This machine:** Windows version, the account it runs as, whether it is elevated, and whether the exe folder is writable.
+- **config.json:** whether it loads, the DSN with the password hidden, and whether the listen port is free or already used by this app.
+- **Windows services:** the SQL Server engine, SQL Browser and agent services with their state, start type and account.
+- **Installed instances (registry):** version and edition, whether TCP/IP is enabled, the TCP port, Windows-only versus mixed authentication, and Force Encryption.
+- **Network:** the instances SQL Browser announces, and the TCP ports `sqlservr.exe` is actually listening on. A running SQL Server with no listening port means TCP/IP is disabled.
+- **Connection probes:** each place SQL Server can be reached is tried with the option sets that old or default servers need (default, `TrustServerCertificate=true`, `tlsmin=1.0`, `encrypt=disable`), then the login, the server version, whether the login is sysadmin and the databases it can open. The first combination that works is printed as a ready-to-paste `"dsn"` for `config.json`.
+
+Every failure comes with the usual cause and fix. The whole report is also saved as `platform-db-tunnel-diagnose.txt` beside the exe (or in the temp folder when that folder is not writable), so it can be sent for review. It contains machine and instance names but no passwords.
+
 ### Other commands
 
 ```powershell
 .\platform-db-tunnel.exe run         # run in the console (default), useful for debugging
+.\platform-db-tunnel.exe diagnose    # inspect the machine and the SQL Server connection (read-only)
 .\platform-db-tunnel.exe start       # start the service
 .\platform-db-tunnel.exe stop        # stop the service
 .\platform-db-tunnel.exe uninstall   # stop and remove the service

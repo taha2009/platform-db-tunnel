@@ -2,3 +2,9 @@ platform-db-tunnel.exe
 config.json
 *.log
 *.log.gz
+platform-db-tunnel-diagnose.txt
+# schema exports of a client database: never commit
+schema.json
+tables.txt
+tables_summary.yaml
+tables_description.yaml
