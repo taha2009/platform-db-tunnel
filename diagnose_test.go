@@ -48,6 +48,7 @@ func TestExplainKnownErrors(t *testing.T) {
 		"x509: certificate signed by unknown authority":                                                                   "TrustServerCertificate",
 		"mssql: Login failed for user 'pluto'. (18456)":                                                                   "ERRORLOG",
 		"mssql: Cannot open database \"X\" requested by the login. (4060)":                                                "database",
+		"read tcp [::1]:62220->[::1]:54372: wsarecv: An existing connection was forcibly closed by the remote host.":      "encrypt=disable",
 	} {
 		if got := explain(msg); !strings.Contains(got, want) {
 			t.Errorf("explain(%q) = %q, want mention of %q", msg, got, want)

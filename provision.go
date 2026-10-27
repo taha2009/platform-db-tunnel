@@ -72,7 +72,7 @@ func requireAdmin() error {
 type regInstance struct{ Name, ID string }
 
 func registeredInstances() ([]regInstance, error) {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, sqlRoot+`\Instance Names\SQL`, registry.QUERY_VALUE)
+	k, err := openInstanceNames()
 	if err != nil {
 		return nil, fmt.Errorf("no SQL Server instances are registered on this machine (%v)", err)
 	}
@@ -215,7 +215,7 @@ func runEnableSQLAuth(args []string) error {
 		fmt.Println("cancelled; nothing was changed.")
 		return nil
 	}
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.SET_VALUE)
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.SET_VALUE|regView)
 	if err != nil {
 		return fmt.Errorf("open registry key for writing: %w", err)
 	}

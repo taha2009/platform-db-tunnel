@@ -89,7 +89,7 @@ Special characters in a password must be URL-encoded in the URL-style formats. D
 "dsn": "sqlserver://localhost:1433?database=mydb"
 ```
 
-A named instance goes in the path (`sqlserver://localhost/SQLEXPRESS?database=mydb`) and needs the *SQL Server Browser* service running. A default instance (service name `MSSQLSERVER`) uses port 1433 and does not.
+A named instance goes in the path (`sqlserver://localhost/SQLEXPRESS?database=mydb`) and needs the *SQL Server Browser* service running. A default instance (service name `MSSQLSERVER`) uses port 1433 and does not. A named instance normally listens on a dynamic port that can change when it restarts, so prefer the instance name over a fixed port number. A database name with spaces or other special characters must be URL-encoded: `ABS 26-27` is written `database=ABS%2026-27`.
 
 **Tables and schemas.** A connection is tied to one database (the `database=` option). Within it, qualify tables with their schema (`dbo.orders`); the default schema is `dbo`. Tables in other databases on the same server can be reached as `otherdb.dbo.orders`.
 
@@ -100,7 +100,7 @@ A named instance goes in the path (`sqlserver://localhost/SQLEXPRESS?database=my
 | `actively refused it` on port 1433 | SQL Server is not listening on TCP. Check `Get-NetTCPConnection -State Listen -OwningProcess (Get-Process sqlservr).Id`. If nothing is listed, TCP/IP is disabled (the default on some installs): enable it in *SQL Server Configuration Manager > SQL Server Network Configuration > Protocols > TCP/IP*, set *IPAll* `TCP Port` to `1433` with *TCP Dynamic Ports* blank, and restart the SQL Server service. A named instance listens on another port; use `localhost/INSTANCE` instead. |
 | `tls: server selected unsupported protocol version 301` | An old SQL Server that only offers TLS 1.0, which Go refuses by default. Add `&tlsmin=1.0` to the DSN. |
 | `x509: certificate signed by unknown authority` | The server has a self-signed certificate. Add `&TrustServerCertificate=true`. |
-| Still failing after the two above | As a last resort add `&encrypt=disable`, which turns TLS off entirely. This only works if the server does not force encryption, and is acceptable only because the connection stays on the same machine. |
+| `connection was forcibly closed` right after a TLS attempt, or `tlsmin=1.0` did not help | A very old SQL Server (2005 / 2008) whose TLS Go cannot negotiate even at 1.0. Use `&encrypt=disable`, which turns TLS off entirely. This only works if the server does not force encryption, and is acceptable only because the connection stays on the same machine (with a SQL login the password then crosses localhost unencrypted). Verified on SQL Server 2005 SP3 (9.00.4035) with Windows authentication. |
 | `Login failed for user` | The account running the app has no SQL Server login, or no access to that database. Grant it one, e.g. `CREATE LOGIN [DOMAIN\user] FROM WINDOWS`, then `CREATE USER` and `db_datareader` in the database. |
 
 A DSN that worked against an old server:

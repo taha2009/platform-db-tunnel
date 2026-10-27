@@ -262,8 +262,29 @@ type instance struct {
 	Dynamic   string
 }
 
-func regString(path, name string) (string, error) {
+// regView is the registry view SQL Server's keys were found in. A 32-bit SQL
+// Server (for example 2005 or 2008 on 64-bit Windows) registers under the
+// 32-bit view, which a 64-bit process does not see by default.
+var regView uint32
+
+// openInstanceNames opens HKLM\...\Instance Names\SQL, trying the native view
+// first and the 32-bit view second, and remembers which one worked.
+func openInstanceNames() (registry.Key, error) {
+	path := sqlRoot + `\Instance Names\SQL`
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE)
+	if err == nil {
+		regView = 0
+		return k, nil
+	}
+	if k32, err32 := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|registry.WOW64_32KEY); err32 == nil {
+		regView = registry.WOW64_32KEY
+		return k32, nil
+	}
+	return 0, err
+}
+
+func regString(path, name string) (string, error) {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|regView)
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +294,7 @@ func regString(path, name string) (string, error) {
 }
 
 func regInt(path, name string) (int, error) {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|regView)
 	if err != nil {
 		return 0, err
 	}
@@ -285,12 +306,15 @@ func regInt(path, name string) (int, error) {
 func diagInstances(r *report) []instance {
 	r.section("Installed SQL Server instances (registry)")
 	const root = `SOFTWARE\Microsoft\Microsoft SQL Server`
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, root+`\Instance Names\SQL`, registry.QUERY_VALUE)
+	k, err := openInstanceNames()
 	if err != nil {
 		r.info("no instances registered on this machine (%v)", err)
 		return nil
 	}
 	defer k.Close()
+	if regView != 0 {
+		r.info("(32-bit SQL Server on 64-bit Windows: read from the 32-bit registry view)")
+	}
 	names, _ := k.ReadValueNames(0)
 	sort.Strings(names)
 	var out []instance
@@ -628,25 +652,37 @@ func diagDetails(r *report, driver, dsn string) {
 	if winOnly.Valid && winOnly.Int64 == 1 {
 		r.info("  server accepts Windows authentication only")
 	}
+	// sys.databases needs SQL Server 2005+, and some old servers or restricted
+	// logins reject it, so fall back to the SQL Server 2000 catalog view.
 	rows, err := db.QueryContext(ctx, `select name, state_desc, cast(has_dbaccess(name) as int) from sys.databases order by name`)
+	withState := err == nil
 	if err != nil {
-		return
+		first := err
+		rows, err = db.QueryContext(ctx, `select name, 'ONLINE', cast(has_dbaccess(name) as int) from master.dbo.sysdatabases order by name`)
+		if err != nil {
+			r.info("  (could not list databases: %v)", first)
+			return
+		}
 	}
 	defer rows.Close()
 	var parts []string
 	for rows.Next() {
 		var name, state string
 		var access sql.NullInt64
-		if rows.Scan(&name, &state, &access) != nil {
-			continue
+		if err := rows.Scan(&name, &state, &access); err != nil {
+			r.info("  (database list incomplete: %v)", err)
+			break
 		}
 		mark := ""
-		if state != "ONLINE" {
+		if withState && state != "ONLINE" {
 			mark = " [" + state + "]"
 		} else if access.Valid && access.Int64 == 0 {
 			mark = " [no access]"
 		}
 		parts = append(parts, name+mark)
+	}
+	if err := rows.Err(); err != nil {
+		r.info("  (database list incomplete: %v)", err)
 	}
 	r.info("  databases: %s", strings.Join(parts, ", "))
 }
@@ -671,6 +707,8 @@ func explain(msg string) string {
 		return "The host name does not resolve. Check the spelling, or use an IP address."
 	case strings.Contains(m, "sspi") || strings.Contains(m, "target principal") || strings.Contains(m, "untrusted domain"):
 		return "Windows authentication failed. Try 'localhost' versus the machine name, or use a SQL login."
+	case strings.Contains(m, "forcibly closed") || strings.Contains(m, "connection reset") || strings.Contains(m, "unexpected eof"):
+		return "The server dropped the connection. Right after a TLS attempt this means a very old SQL Server (2005/2008) whose encryption Go cannot negotiate even with tlsmin=1.0: use encrypt=disable (fine on localhost)."
 	case strings.Contains(m, "encryption") || strings.Contains(m, "tls handshake"):
 		return "TLS negotiation failed. Try TrustServerCertificate=true, tlsmin=1.0, or encrypt=disable (not if Force Encryption is on)."
 	}
