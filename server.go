@@ -17,6 +17,10 @@ const (
 	maxBodyBytes = 1 << 20
 )
 
+// version is the release tag (e.g. v1.0.11), set at build time by the release
+// workflow with -ldflags "-X main.version=<tag>"; "dev" for a local build.
+var version = "dev"
+
 type queryRequest struct {
 	SQL  string `json:"sql"`
 	Args []any  `json:"args"` // bound positionally as @p1, @p2, ...
@@ -33,6 +37,9 @@ func newHandler(db *sql.DB, queryTimeout time.Duration) http.Handler {
 			return
 		}
 		w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": version})
 	})
 	mux.HandleFunc("POST /query", queryHandler(db, queryTimeout))
 	return mux
