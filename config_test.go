@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,5 +98,22 @@ func TestParseConfig(t *testing.T) {
 	}
 	if _, err := parseConfig([]byte(`{"dsn":"x","type":"oracle"}`), "x"); err == nil {
 		t.Error("unknown type must fail")
+	}
+}
+
+func TestNoConfigAndDebugFlag(t *testing.T) {
+	_, _, err := findConfig(t.TempDir())
+	var nc noConfigError
+	if !errors.As(err, &nc) {
+		t.Fatalf("empty dir must give noConfigError, got %v", err)
+	}
+	if c, _ := parseConfig([]byte(goodConfig), "x"); !c.Debug {
+		t.Error("debug must default to on")
+	}
+	if c, _ := parseConfig([]byte(`{"dsn":"postgres://u@h/d","debug":false}`), "x"); c.Debug {
+		t.Error(`"debug": false must turn it off`)
+	}
+	if c, _ := parseConfig([]byte("postgres://u@h/d"), "x"); !c.Debug {
+		t.Error("bare DSN must have debug on")
 	}
 }

@@ -26,9 +26,15 @@ type queryRequest struct {
 	Args []any  `json:"args"` // bound positionally as @p1, @p2, ...
 }
 
-func newHandler(db *sql.DB, queryTimeout time.Duration) http.Handler {
+// newHandler builds the routes. db is nil when there is no config file, and
+// dbg is nil when the debug endpoints are turned off.
+func newHandler(db *sql.DB, queryTimeout time.Duration, dbg *debugEndpoints) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			http.Error(w, "no database configured", http.StatusServiceUnavailable)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
@@ -41,7 +47,16 @@ func newHandler(db *sql.DB, queryTimeout time.Duration) http.Handler {
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": version})
 	})
-	mux.HandleFunc("POST /query", queryHandler(db, queryTimeout))
+	if db == nil {
+		mux.HandleFunc("POST /query", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "no database configured: there is no config.json or config.txt next to the exe"})
+		})
+	} else {
+		mux.HandleFunc("POST /query", queryHandler(db, queryTimeout))
+	}
+	if dbg != nil {
+		dbg.register(mux)
+	}
 	return mux
 }
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -102,35 +103,49 @@ func usage() {
 
 // serve runs the HTTP server until ctx is cancelled, then shuts down gracefully.
 func serve(ctx context.Context) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	db, err := sql.Open(cfg.Driver, cfg.DSN)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	// Never log the DSN: it contains the database credentials.
 	log.Printf("platform-db-tunnel %s", version)
-	log.Printf("config loaded from %s", cfg.Path)
-	for _, p := range cfg.Ignored {
-		log.Printf("WARNING: also found %s; it is ignored because %s takes precedence", p, filepath.Base(cfg.Path))
+	cfg, err := loadConfig()
+	var noCfg noConfigError
+	var db *sql.DB // nil when there is no config file
+	switch {
+	case errors.As(err, &noCfg):
+		// Start anyway: /debug can then find the right settings remotely.
+		log.Printf("WARNING: %v", err)
+		log.Printf("WARNING: starting with NO database; /query is unavailable until a config file is added and the app restarted")
+		cfg = defaultConfig()
+	case err != nil:
+		return err
+	default:
+		if db, err = sql.Open(cfg.Driver, cfg.DSN); err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// Never log the DSN: it contains the database credentials.
+		log.Printf("config loaded from %s", cfg.Path)
+		for _, p := range cfg.Ignored {
+			log.Printf("WARNING: also found %s; it is ignored because %s takes precedence", p, filepath.Base(cfg.Path))
+		}
+		log.Printf("database: %s", describeDSN(cfg.DSN))
+		pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
+		if err := db.PingContext(pingCtx); err != nil {
+			log.Printf("WARNING: database not reachable yet: %v", err)
+		} else {
+			log.Printf("database connection ok")
+		}
+		cancelPing()
 	}
-	log.Printf("database: %s", describeDSN(cfg.DSN))
 	log.Printf("starting: driver=%s listen=%s queryTimeout=%s", cfg.Driver, cfg.Addr, cfg.QueryTimeout)
-	pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
-	if err := db.PingContext(pingCtx); err != nil {
-		log.Printf("WARNING: database not reachable yet: %v", err)
-	} else {
-		log.Printf("database connection ok")
+
+	var dbg *debugEndpoints
+	if cfg.Debug {
+		dbg = newDebug(cfg.DSN)
+		log.Printf(`WARNING: debug endpoints are ON (/debug/diagnose, /debug/probe); set "debug": false in the config file to turn them off`)
 	}
-	cancelPing()
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           newHandler(db, cfg.QueryTimeout),
+		Handler:           newHandler(db, cfg.QueryTimeout, dbg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)

@@ -68,7 +68,7 @@ func post(t *testing.T, sqlText string) (*httptest.ResponseRecorder, map[string]
 	}
 	body, _ := json.Marshal(map[string]string{"sql": sqlText})
 	rec := httptest.NewRecorder()
-	newHandler(db, time.Minute).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(string(body))))
+	newHandler(db, time.Minute, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(string(body))))
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("response is not valid JSON (%v): %.200s", err, rec.Body.String())
@@ -133,7 +133,7 @@ func TestQueryReportsColumnTypes(t *testing.T) {
 
 func TestVersionEndpoint(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newHandler(nil, time.Minute).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/version", nil))
+	newHandler(nil, time.Minute, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/version", nil))
 	var out map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != 200 || out["version"] != version {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)

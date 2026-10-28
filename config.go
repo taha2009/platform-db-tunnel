@@ -23,6 +23,21 @@ type config struct {
 	Ignored []string
 	// QueryTimeout bounds one /query call, including reading all rows.
 	QueryTimeout time.Duration
+	// Debug enables the /debug endpoints (on unless "debug": false).
+	Debug bool
+}
+
+// noConfigError means no config file exists, as opposed to one that is broken.
+// The service still starts then, with no database, so it can be diagnosed.
+type noConfigError struct{ dir string }
+
+func (e noConfigError) Error() string {
+	return "config: no config.json or config.txt in " + e.dir
+}
+
+// defaultConfig is what the service runs with when there is no config file.
+func defaultConfig() *config {
+	return &config{Addr: "127.0.0.1:8080", QueryTimeout: 30 * time.Minute, Debug: true}
 }
 
 // configNames are the accepted file names, in order of preference. config.txt
@@ -37,11 +52,13 @@ var configNames = []string{"config.json", "config.txt"}
 //	dsn   driver-specific connection string (required)
 //	port  listen port on 127.0.0.1 (default 8080)
 //	queryTimeoutSeconds  max duration of one query incl. reading rows (default 1800)
+//	debug  false turns off the /debug endpoints (default true)
 type fileConfig struct {
 	Port                string `json:"port"`
 	Type                string `json:"type"`
 	DSN                 string `json:"dsn"`
 	QueryTimeoutSeconds int    `json:"queryTimeoutSeconds"`
+	Debug               *bool  `json:"debug"`
 }
 
 // findConfig returns the config file to use in dir and any other candidates
@@ -67,7 +84,7 @@ func findConfig(dir string) (path string, ignored []string, err error) {
 			return "", nil, fmt.Errorf("config: found %s in %s, but the real name is %s: Windows is hiding the .txt extension. Rename it to config.json (or config.txt)", n, dir, n[:len(n)-len(".txt")])
 		}
 	}
-	return "", nil, fmt.Errorf("config: no config.json or config.txt in %s", dir)
+	return "", nil, noConfigError{dir}
 }
 
 // inferType guesses the database type from the DSN when "type" is not given.
@@ -118,6 +135,7 @@ func parseConfig(b []byte, path string) (*config, error) {
 		DSN:          f.DSN,
 		Path:         path,
 		QueryTimeout: time.Duration(f.QueryTimeoutSeconds) * time.Second,
+		Debug:        f.Debug == nil || *f.Debug,
 	}, nil
 }
 

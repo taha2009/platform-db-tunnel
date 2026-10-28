@@ -9,6 +9,8 @@ A small HTTP service that runs SQL against a local database: SQL Server, Postgre
 | GET    | `/healthz` | Returns `ok`, or 503 if the database is down  |
 | GET    | `/version` | Returns `{"version": "v1.0.11"}`, the release tag the exe was built from (`dev` for a local build) |
 | POST   | `/query`   | Runs SQL and returns rows as JSON             |
+| GET, POST | `/debug/diagnose` | Runs the diagnose report (see [Debug endpoints](#debug-endpoints)) |
+| POST   | `/debug/probe` | Tries connection strings and statements (see [Debug endpoints](#debug-endpoints)) |
 
 ```bash
 curl -X POST http://127.0.0.1:8080/query \
@@ -200,6 +202,40 @@ It reports, in order:
 
 Every failure comes with the usual cause and fix. The whole report is also saved as `platform-db-tunnel-diagnose.txt` beside the exe (or in the temp folder when that folder is not writable), so it can be sent for review. It contains machine and instance names but no passwords.
 
+### Debug endpoints
+
+For working out the right settings without being at the machine, the app has two endpoints that are **on by default**. Set `"debug": false` in the config file to turn them off; the log warns at startup while they are on.
+
+The app also starts when there is **no config file at all**: it listens on `127.0.0.1:8080` with no database, `/query` and `/healthz` answer 503 "no database configured", and the debug endpoints work. A config file that exists but is broken still stops startup, with the error in the log.
+
+**`/debug/diagnose`** runs the same read-only report as the `diagnose` command, as the account the service runs as (so it shows what that account can do, for example LocalSystem). The text streams back line by line. One report runs at a time. `GET` uses the defaults; `POST` takes optional JSON:
+
+```bash
+curl http://127.0.0.1:8080/debug/diagnose
+curl -X POST http://127.0.0.1:8080/debug/diagnose   -d '{"database": "ACCDATA", "user": "pluto", "password": "...", "dsn": ""}'
+```
+
+**`POST /debug/probe`** takes `dsn` or a `dsns` list (up to 20), and optionally `sql` and `type` (otherwise guessed from the DSN). Every DSN is tried, so one request can test many option combinations:
+
+```bash
+curl -X POST http://127.0.0.1:8080/debug/probe -d '{
+  "dsns": [
+    "sqlserver://localhost/SQLEXPRESS?database=mydb&encrypt=disable",
+    "sqlserver://localhost:1433?database=mydb&tlsmin=1.0&TrustServerCertificate=true"
+  ],
+  "sql": "select @@version"
+}'
+```
+
+Each result has `ok`, the time taken in `ms`, the `target` (the DSN with the password hidden), and on failure the `error` with a `hint` for the usual cause. With `sql`, the first 100 rows come back as `columns`, `types` and `rows` (`truncated` is true if there were more).
+
+Limits:
+
+- **Only this machine.** A DSN may name only this computer (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)` or the computer's own name) or the host of the DSN in the config file. Anything else is refused, as are options that override the host (`host`, `server`, ...) and lists of several hosts. The endpoints cannot be used to reach other servers on the network.
+- **Nothing is changed.** The endpoints do not write the config file, enable SQL authentication or create logins; those stay command-line only.
+- **Nothing sensitive is logged.** The log has the hidden-password target, the outcome and the time taken, never a DSN, password or result value.
+- `/query` is unchanged and, as before, runs any SQL it is sent.
+
 ### Enable SQL authentication and create a login
 
 Use these when a SQL Server only allows Windows authentication and the app needs a username and password instead. Unlike `diagnose`, **these change the customer's SQL Server**. Each one prints exactly what it will do, supports `--dry-run`, and asks you to type `yes` (skip with `--yes`).
@@ -245,6 +281,7 @@ To upgrade: `stop`, replace the exe, `start`.
 ## Security notes
 
 - There is no authentication. Anything that can reach the port can run SQL, so only expose it through something that authenticates callers.
+- The [debug endpoints](#debug-endpoints) are on by default. They only connect to this machine, but they run diagnostics and accept passwords in the request body; set `"debug": false` once the setup is done.
 - `/query` runs whatever SQL it receives. The SQL login the app uses is the real limit on what a caller can do, so give it a least-privilege account (read-only if that is all you need).
 
 ## Adding another database

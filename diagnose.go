@@ -84,7 +84,23 @@ func runDiagnose(args []string) error {
 		out = io.MultiWriter(os.Stdout, f)
 	}
 	r := &report{w: out}
+	diagnoseReport(r, diagOptions{DSN: *dsnFlag, User: *userFlag, Password: password, Database: *dbFlag})
+	if outPath != "" && f != nil {
+		r.info("this report was saved to %s - send it back to whoever is helping you", outPath)
+	}
+	return nil
+}
 
+type diagOptions struct {
+	DSN      string // SQL Server DSN to test instead of the configured one
+	User     string // SQL login to try; empty means Windows authentication
+	Password string
+	Database string
+}
+
+// diagnoseReport writes the whole report, ending with the summary counts. It is
+// shared by the diagnose command and the /debug/diagnose endpoint.
+func diagnoseReport(r *report, o diagOptions) {
 	fmt.Fprintln(r.w, "platform-db-tunnel diagnose (read-only; passwords are never printed)")
 	diagEnvironment(r)
 	cfg := diagConfig(r)
@@ -96,7 +112,7 @@ func runDiagnose(args []string) error {
 	insts := diagInstances(r)
 	listeners := diagNetwork(r)
 
-	driver, dsn := "sqlserver", *dsnFlag
+	driver, dsn := "sqlserver", o.DSN
 	if cfg != nil && dsn == "" {
 		driver, dsn = cfg.Driver, cfg.DSN
 	}
@@ -116,15 +132,11 @@ func runDiagnose(args []string) error {
 		}
 	}
 
-	res := diagProbe(r, insts, listeners, *userFlag, password, *dbFlag)
-	diagRecommend(r, res, *dbFlag, *userFlag, password, configured)
+	res := diagProbe(r, insts, listeners, o.User, o.Password, o.Database)
+	diagRecommend(r, res, o.Database, o.User, o.Password, configured)
 
 	r.section("Summary")
 	r.info("%d problem(s), %d warning(s)", r.fails, r.warns)
-	if outPath != "" && f != nil {
-		r.info("this report was saved to %s - send it back to whoever is helping you", outPath)
-	}
-	return nil
 }
 
 func diagEnvironment(r *report) {
